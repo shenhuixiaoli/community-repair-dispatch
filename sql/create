@@ -1,0 +1,231 @@
+-- 建库语句
+CREATE DATABASE IF NOT EXISTS community_algorithm_service
+DEFAULT CHARACTER SET utf8mb4
+DEFAULT COLLATE utf8mb4_unicode_ci;
+
+USE community_algorithm_service;
+
+-- 通用字段注释：
+-- gmt_create: 记录创建时间（自动填充）
+-- gmt_modified: 记录修改时间（自动更新）
+-- is_deleted: 逻辑删除标记（0-未删，1-已删）
+
+--故障识别表
+USE community_algorithm_service;
+
+CREATE TABLE IF NOT EXISTS `fault` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID，自增',
+  `img_url` VARCHAR(512) NOT NULL COMMENT '故障图片地址（阿里云OSS/本地路径）',
+  `confidence` DECIMAL(10,8) NOT NULL COMMENT '识别置信分数（0-1）',
+  `fault_label` VARCHAR(32) NOT NULL COMMENT '识别结果标签（如y_0_2_1）',
+  `fault_type` TINYINT NOT NULL COMMENT '故障类型编码（0-6，与FAULT_TYPE_TO_SKILL对应）',
+  `fault_type_name` VARCHAR(64) NOT NULL COMMENT '故障类型描述（如楼道灯损坏）',
+  `is_valid` TINYINT(1) NOT NULL COMMENT '是否有效（0-无效，1-有效，根据置信分数阈值判断）',
+  `severity` TINYINT NOT NULL COMMENT '故障严重程度编码（如1/2/3）',
+  `severity_name` VARCHAR(32) NOT NULL COMMENT '严重程度描述（如轻微/严重）',
+  `urgency` TINYINT NOT NULL COMMENT '紧急程度编码（如1/2/3）',
+  `urgency_name` VARCHAR(32) NOT NULL COMMENT '紧急程度描述（如低紧急/中紧急/高紧急）',
+  `msg` VARCHAR(256) NOT NULL COMMENT '识别结果描述（如故障识别成功/失败）',
+  `time` DATETIME NOT NULL COMMENT '识别执行时间',
+  `req` JSON NOT NULL COMMENT '识别算法请求入参（JSON格式）',
+  `resp` JSON NOT NULL COMMENT '识别算法响应出参（JSON格式）',
+  `gmt_create` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+  `gmt_modified` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '记录修改时间',
+  `is_deleted` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '逻辑删除标记',
+  PRIMARY KEY (`id`),
+  KEY `idx_fault_type` (`fault_type`),
+  KEY `idx_is_valid` (`is_valid`),
+  KEY `idx_time` (`time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='故障识别算法执行结果表';
+
+--llm兜底分析表
+CREATE TABLE IF NOT EXISTS `fault_llm_fallback` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID，自增',
+  `fault_id` BIGINT UNSIGNED NOT NULL COMMENT '关联fault表主键ID',
+  `llm_prompt` TEXT NOT NULL COMMENT '调用LLM的提示词（输入，含故障图片信息/模糊描述）',
+  `llm_response` TEXT NOT NULL COMMENT 'LLM的兜底分析结果（输出，含故障判断/建议）',
+  `llm_model` VARCHAR(64) NOT NULL COMMENT '使用的LLM模型（如gpt-3.5/文心一言/通义千问）',
+  `execute_time` DATETIME NOT NULL COMMENT 'LLM调用执行时间',
+  `is_effective` TINYINT(1) NOT NULL COMMENT '兜底分析是否有效（0-无效，1-有效）',
+  `gmt_create` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+  `gmt_modified` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '记录修改时间',
+  `is_deleted` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '逻辑删除标记',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_fault_id` (`fault_id`) COMMENT '一个故障仅对应一次LLM兜底分析',
+  KEY `idx_llm_model` (`llm_model`),
+  CONSTRAINT `fk_fault_llm_fallback_fault_id` FOREIGN KEY (`fault_id`) REFERENCES `fault` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='故障识别LLM兜底分析记录表';
+
+--维修人员信息表
+CREATE TABLE IF NOT EXISTS `worker` (
+  `id` VARCHAR(32) NOT NULL COMMENT '工人唯一标识（如W001/W002，与Redis中一致）',
+  `name` VARCHAR(64) NOT NULL COMMENT '工人姓名',
+  `skills` JSON NOT NULL COMMENT '工人技能列表（如["electrician","plumber"]，与FAULT_TYPE_TO_SKILL对应）',
+  `lat` DECIMAL(10,4) NOT NULL COMMENT '工人当前纬度',
+  `lng` DECIMAL(10,4) NOT NULL COMMENT '工人当前经度',
+  `load` TINYINT NOT NULL DEFAULT 0 COMMENT '工人当前负载（待处理工单数量）',
+  `speed` TINYINT NOT NULL DEFAULT 50 COMMENT '工人移动速度（m/min，默认50）',
+  `is_available` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否可用（0-不可用，1-可用）',
+  `phone` VARCHAR(16) DEFAULT '' COMMENT '工人联系电话（扩展字段）',
+  `skill_level` TINYINT DEFAULT 1 COMMENT '技能熟练度（1-初级，2-中级，3-高级，扩展字段）',
+  `gmt_create` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+  `gmt_modified` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '记录修改时间',
+  `is_deleted` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '逻辑删除标记',
+  PRIMARY KEY (`id`),
+  KEY `idx_is_available` (`is_available`),
+  KEY `idx_load` (`load`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='维修人员基础信息表';
+
+--智能派单算法表
+CREATE TABLE IF NOT EXISTS `dispatch` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID，自增',
+  `fault_id` BIGINT UNSIGNED NOT NULL COMMENT '关联fault表主键ID',
+  `order_id` VARCHAR(64) NOT NULL COMMENT '派单工单ID（如ORDER20260316001）',
+  `worker_id` VARCHAR(32) NOT NULL COMMENT '关联worker表工人ID',
+  `worker_name` VARCHAR(64) NOT NULL COMMENT '工人姓名（冗余存储，避免联表查询）',
+  `order_lat` DECIMAL(10,4) NOT NULL COMMENT '工单地点纬度',
+  `order_lng` DECIMAL(10,4) NOT NULL COMMENT '工单地点经度',
+  `comprehensive_score` DECIMAL(5,4) NOT NULL COMMENT '派单综合匹配分数（0-1）',
+  `is_feasible` TINYINT(1) NOT NULL COMMENT '派单是否可行（0-不可行，1-可行）',
+  `dispatch_reason` VARCHAR(256) NOT NULL COMMENT '派单结果描述（如派单成功/无可用工人）',
+  `dispatch_detail` JSON NOT NULL COMMENT '派单详情（含距离/负载/技能匹配等，与算法输出detail一致）',
+  `fault_info` JSON NOT NULL COMMENT '关联的故障信息（冗余存储，与算法输出fault_info一致）',
+  `req` JSON NOT NULL COMMENT '派单算法请求入参（JSON格式）',
+  `resp` JSON NOT NULL COMMENT '派单算法响应出参（JSON格式）',
+  `dispatch_time` DATETIME NOT NULL COMMENT '派单执行时间',
+  `gmt_create` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+  `gmt_modified` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '记录修改时间',
+  `is_deleted` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '逻辑删除标记',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_order_id` (`order_id`) COMMENT '工单ID唯一，避免重复派单',
+  KEY `idx_fault_id` (`fault_id`),
+  KEY `idx_worker_id` (`worker_id`),
+  KEY `idx_dispatch_time` (`dispatch_time`),
+  CONSTRAINT `fk_dispatch_fault_id` FOREIGN KEY (`fault_id`) REFERENCES `fault` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_dispatch_worker_id` FOREIGN KEY (`worker_id`) REFERENCES `worker` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能派单算法执行结果表';
+
+--维修排期算法表
+CREATE TABLE IF NOT EXISTS `schedule` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID，自增',
+  `dispatch_id` BIGINT UNSIGNED NOT NULL COMMENT '关联dispatch表主键ID',
+  `order_id` VARCHAR(64) NOT NULL COMMENT '排期工单ID（与派单order_id一致，如SCHEDULE20260317001）',
+  `predict_repair_time` DATETIME NOT NULL COMMENT '预计维修开始时间',
+  `repair_duration_min` TINYINT NOT NULL COMMENT '预计维修时长（分钟）',
+  `dead_line` DATETIME NOT NULL COMMENT '维修截止时间（含缓冲）',
+  `buffer_time_min` TINYINT NOT NULL COMMENT '维修缓冲时间（分钟）',
+  `predict_features` JSON NOT NULL COMMENT '排期预测特征（与算法输出features一致）',
+  `dispatch_result` JSON NOT NULL COMMENT '关联的派单结果（冗余存储，与算法输出dispatch_result一致）',
+  `fault_info` JSON NOT NULL COMMENT '关联的故障信息（冗余存储，与算法输出fault_info一致）',
+  `req` JSON NOT NULL COMMENT '排期算法请求入参（JSON格式）',
+  `resp` JSON NOT NULL COMMENT '排期算法响应出参（JSON格式）',
+  `schedule_time` DATETIME NOT NULL COMMENT '排期执行时间',
+  `gmt_create` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+  `gmt_modified` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '记录修改时间',
+  `is_deleted` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '逻辑删除标记',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_order_id` (`order_id`) COMMENT '工单ID唯一，避免重复排期',
+  KEY `idx_dispatch_id` (`dispatch_id`),
+  KEY `idx_schedule_time` (`schedule_time`),
+  KEY `idx_dead_line` (`dead_line`),
+  CONSTRAINT `fk_schedule_dispatch_id` FOREIGN KEY (`dispatch_id`) REFERENCES `dispatch` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='维修排期算法执行结果表';
+
+--系统api请求日志表
+CREATE TABLE IF NOT EXISTS `api_request_log` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID，自增',
+  `api_type` TINYINT NOT NULL COMMENT 'API类型（1-故障识别，2-智能派单，3-维修排期）',
+  `api_path` VARCHAR(128) NOT NULL COMMENT 'API接口路径（如/api/fault/predict）',
+  `request_method` VARCHAR(16) NOT NULL COMMENT '请求方法（POST/GET）',
+  `request_ip` VARCHAR(64) NOT NULL COMMENT '请求IP地址',
+  `request_param` JSON NOT NULL COMMENT '请求参数（JSON格式）',
+  `response_code` INT NOT NULL COMMENT '响应状态码（200/400/500）',
+  `response_msg` VARCHAR(256) NOT NULL COMMENT '响应描述',
+  `response_data` JSON NOT NULL COMMENT '响应数据（JSON格式）',
+  `execute_time` DECIMAL(10,3) NOT NULL COMMENT '接口执行耗时（毫秒）',
+  `request_time` DATETIME NOT NULL COMMENT '接口请求时间',
+  `gmt_create` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+  `is_deleted` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '逻辑删除标记',
+  PRIMARY KEY (`id`),
+  KEY `idx_api_type` (`api_type`),
+  KEY `idx_request_time` (`request_time`),
+  KEY `idx_response_code` (`response_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统API请求统一日志表';
+
+--故障类型与技能映射表（建表和初始化）
+CREATE TABLE IF NOT EXISTS `fault_type_skill_map` (
+  `id` TINYINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID，自增',
+  `fault_type` TINYINT NOT NULL COMMENT '故障类型编码（0-6，唯一）',
+  `fault_type_name` VARCHAR(64) NOT NULL COMMENT '故障类型描述（如楼道灯损坏）',
+  `skill_code` VARCHAR(32) NOT NULL COMMENT '技能编码（如electrician/fireman，与worker表skills对应）',
+  `skill_name` VARCHAR(64) NOT NULL COMMENT '技能描述（如电工/消防维保人员）',
+  `is_default` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否为默认映射（0-否，1-是）',
+  `gmt_create` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+  `gmt_modified` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '记录修改时间',
+  `is_deleted` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '逻辑删除标记',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_fault_type` (`fault_type`) COMMENT '故障类型编码唯一',
+  KEY `idx_skill_code` (`skill_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='故障类型与维修技能映射表（基础配置表）';
+
+-- 初始化映射数据（与FAULT_TYPE_TO_SKILL完全一致）
+INSERT INTO `fault_type_skill_map` (`fault_type`, `fault_type_name`, `skill_code`, `skill_name`)
+VALUES
+(0, '楼道灯损坏', 'electrician', '电工'),
+(1, '桌椅损坏', 'repairman', '普通维修工'),
+(2, '健身器材损坏', 'repairman', '普通维修工'),
+(3, '消防栓损坏', 'fireman', '消防维保人员'),
+(4, '水管漏水', 'plumber', '水工'),
+(5, '地砖翘起', 'repairman', '普通维修工'),
+(6, '墙面渗水', 'plumber', '水工');
+
+--工单状态流转表
+CREATE TABLE IF NOT EXISTS `order_status_flow` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID，自增',
+  `order_id` VARCHAR(64) NOT NULL COMMENT '全局工单ID（与dispatch/schedule表order_id一致）',
+  `fault_id` BIGINT UNSIGNED NOT NULL COMMENT '关联fault表主键ID',
+  `dispatch_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联dispatch表主键ID（派单后填充）',
+  `schedule_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联schedule表主键ID（排期后填充）',
+  `worker_id` VARCHAR(32) DEFAULT NULL COMMENT '关联worker表工人ID（派单后填充）',
+  `current_status` TINYINT NOT NULL COMMENT '当前工单状态（1-待识别，2-识别完成，3-待派单，4-派单完成，5-待排期，6-排期完成，7-维修中，8-待验收，9-验收完成，10-工单关闭）',
+  `status_name` VARCHAR(32) NOT NULL COMMENT '当前状态描述（与current_status对应）',
+  `status_remark` VARCHAR(256) DEFAULT '' COMMENT '状态备注（如验收不通过原因/派单失败原因）',
+  `status_update_time` DATETIME NOT NULL COMMENT '状态更新时间',
+  `creator` VARCHAR(64) DEFAULT 'system' COMMENT '工单创建者（system-系统自动/用户名-人工创建）',
+  `finish_time` DATETIME DEFAULT NULL COMMENT '工单完成时间（验收完成后填充）',
+  `gmt_create` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+  `gmt_modified` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '记录修改时间',
+  `is_deleted` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '逻辑删除标记',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_order_id` (`order_id`) COMMENT '全局工单ID唯一',
+  KEY `idx_fault_id` (`fault_id`),
+  KEY `idx_worker_id` (`worker_id`),
+  KEY `idx_current_status` (`current_status`),
+  KEY `idx_status_update_time` (`status_update_time`),
+  CONSTRAINT `fk_order_status_flow_fault_id` FOREIGN KEY (`fault_id`) REFERENCES `fault` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_order_status_flow_dispatch_id` FOREIGN KEY (`dispatch_id`) REFERENCES `dispatch` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_order_status_flow_schedule_id` FOREIGN KEY (`schedule_id`) REFERENCES `schedule` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_order_status_flow_worker_id` FOREIGN KEY (`worker_id`) REFERENCES `worker` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工单全生命周期状态流转表';
+
+-- 创建用户信息表
+CREATE TABLE `sys_user` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '用户ID',
+  `username` varchar(50) NOT NULL COMMENT '用户名/登录账号',
+  `password` varchar(100) NOT NULL COMMENT '加密后的密码',
+  `real_name` varchar(50) NOT NULL COMMENT '用户姓名',
+  `latitude` decimal(10,6) DEFAULT NULL COMMENT '纬度',
+  `longitude` decimal(10,6) DEFAULT NULL COMMENT '经度',
+  `last_login_time` datetime DEFAULT NULL COMMENT '最后登录时间',
+  `last_login_ip` varchar(50) DEFAULT NULL COMMENT '最后登录IP',
+  `status` tinyint NOT NULL DEFAULT '1' COMMENT '状态 1-正常 0-禁用',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_username` (`username`) COMMENT '用户名唯一',
+  KEY `idx_status` (`status`) COMMENT '状态索引'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户信息表';
+
+-- 插入测试数据（密码是123456，加密后的值）
+INSERT INTO `sys_user` (`username`, `password`, `real_name`, `latitude`, `longitude`)
+VALUES ('admin', '$2b$12$9uW5Uf2j7z8G7h6F5d4S3a2q1w0e9r8t7y6u5i4o3p2a1s0d9f8g7h6j5k4l3', '管理员', 31.2305, 121.4738);

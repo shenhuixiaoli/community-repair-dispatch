@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>故障识别与派单排期系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script>
+        // 配置Tailwind自定义样式
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#165DFF',
+                        success: '#00B42A',
+                        warning: '#FF7D00',
+                        danger: '#F53F3F',
+                        neutral: '#86909C'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .card-shadow {
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            }
+            .form-input-focus {
+                @apply border-primary ring-2 ring-primary/20;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans">
+    <!-- 页面头部 -->
+    <header class="bg-white shadow-sm sticky top-0 z-10">
+        <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+            <h1 class="text-[clamp(1.5rem,3vw,2rem)] font-bold text-primary">
+                <i class="fa fa-cogs mr-2"></i>故障识别与派单排期系统
+            </h1>
+            <div class="text-neutral text-sm">
+                API接口调试工具
+            </div>
+        </div>
+    </header>
+
+    <!-- 主要内容区域 -->
+    <main class="container mx-auto px-4 py-8">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- 左侧表单区域 -->
+            <div class="lg:col-span-1">
+                <div class="bg-white rounded-lg p-6 card-shadow">
+                    <h2 class="text-xl font-semibold mb-6 pb-3 border-b border-gray-100">参数配置</h2>
+
+                    <!-- 表单 -->
+                    <form id="apiForm" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1" for="imgUrl">
+                                图片URL <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" id="imgUrl" name="imgUrl"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:form-input-focus transition-all"
+                                placeholder="例如: test.jpg" value="test.jpg">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1" for="orderId">
+                                订单ID
+                            </label>
+                            <input type="text" id="orderId" name="orderId"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:form-input-focus transition-all"
+                                placeholder="例如: ORDER20260316001" value="ORDER20260316001">
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1" for="lat">
+                                    纬度
+                                </label>
+                                <input type="number" step="0.0001" id="lat" name="lat"
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:form-input-focus transition-all"
+                                    placeholder="例如: 31.2305" value="31.2305">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1" for="lng">
+                                    经度
+                                </label>
+                                <input type="number" step="0.0001" id="lng" name="lng"
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:form-input-focus transition-all"
+                                    placeholder="例如: 121.4738" value="121.4738">
+                            </div>
+                        </div>
+
+                        <!-- 算法选择 -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                选择算法 <span class="text-danger">*</span>
+                            </label>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <label class="flex items-center p-3 border border-gray-200 rounded-md cursor-pointer hover:bg-gray-50 transition-all">
+                                    <input type="radio" name="algorithm" value="predict" checked
+                                        class="mr-2 text-primary focus:ring-primary">
+                                    <span>故障识别</span>
+                                </label>
+                                <label class="flex items-center p-3 border border-gray-200 rounded-md cursor-pointer hover:bg-gray-50 transition-all">
+                                    <input type="radio" name="algorithm" value="dispatch"
+                                        class="mr-2 text-primary focus:ring-primary">
+                                    <span>智能派单</span>
+                                </label>
+                                <label class="flex items-center p-3 border border-gray-200 rounded-md cursor-pointer hover:bg-gray-50 transition-all">
+                                    <input type="radio" name="algorithm" value="schedule"
+                                        class="mr-2 text-primary focus:ring-primary">
+                                    <span>智能排期</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- 提交按钮 -->
+                        <div class="pt-4">
+                            <button type="button" id="submitBtn"
+                                class="w-full bg-primary hover:bg-primary/90 text-white font-medium py-2.5 px-4 rounded-md transition-all flex items-center justify-center">
+                                <i class="fa fa-paper-plane mr-2"></i>
+                                <span>调用API接口</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- 右侧结果展示区域 -->
+            <div class="lg:col-span-2">
+                <div class="bg-white rounded-lg p-6 card-shadow h-full flex flex-col">
+                    <div class="flex justify-between items-center mb-6 pb-3 border-b border-gray-100">
+                        <h2 class="text-xl font-semibold">接口响应结果</h2>
+                        <button id="copyBtn" class="text-primary hover:text-primary/80 flex items-center text-sm transition-all" disabled>
+                            <i class="fa fa-copy mr-1"></i> 复制结果
+                        </button>
+                    </div>
+
+                    <!-- 加载状态 -->
+                    <div id="loadingState" class="hidden flex-grow flex items-center justify-center flex-col">
+                        <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
+                        <p class="text-gray-600">正在调用接口，请稍候...</p>
+                    </div>
+
+                    <!-- 结果展示区域 -->
+                    <div id="resultArea" class="hidden flex-grow overflow-auto">
+                        <div id="responseHeader" class="mb-4 p-3 rounded-md bg-gray-50">
+                            <div class="flex items-center mb-2">
+                                <span id="responseStatus" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-danger/10 text-danger">
+                                    失败 (400)
+                                </span>
+                                <span id="responseTime" class="ml-3 text-xs text-gray-500"></span>
+                            </div>
+                            <div class="text-xs text-gray-500">
+                                <span id="requestUrl">http://127.0.0.1:5000/api/fault/predict</span>
+                            </div>
+                        </div>
+                        <pre id="responseBody" class="bg-gray-50 p-4 rounded-md text-sm overflow-auto whitespace-pre-wrap"></pre>
+                    </div>
+
+                    <!-- 初始提示 -->
+                    <div id="initialPrompt" class="flex-grow flex items-center justify-center">
+                        <div class="text-center text-gray-400">
+                            <i class="fa fa-file-text-o text-5xl mb-4"></i>
+                            <p>请配置参数并调用接口查看响应结果</p>
+                        </div>
+                    </div>
+
+                    <!-- 错误提示 -->
+                    <div id="errorState" class="hidden flex-grow flex items-center justify-center flex-col">
+                        <i class="fa fa-exclamation-circle text-5xl mb-4 text-danger"></i>
+                        <p id="errorMessage" class="text-danger">接口调用失败，请检查网络连接</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 页脚 -->
+    <footer class="mt-12 py-6 bg-white border-t border-gray-200">
+        <div class="container mx-auto px-4 text-center text-gray-500 text-sm">
+            <p>故障识别与派单排期系统 &copy; 2026</p>
+        </div>
+    </footer>
+
+    <script>
+        // DOM元素
+        const submitBtn = document.getElementById('submitBtn');
+        const copyBtn = document.getElementById('copyBtn');
+        const apiForm = document.getElementById('apiForm');
+        const loadingState = document.getElementById('loadingState');
+        const resultArea = document.getElementById('resultArea');
+        const initialPrompt = document.getElementById('initialPrompt');
+        const errorState = document.getElementById('errorState');
+        const responseBody = document.getElementById('responseBody');
+        const responseStatus = document.getElementById('responseStatus');
+        const responseTime = document.getElementById('responseTime');
+        const requestUrl = document.getElementById('requestUrl');
+        const errorMessage = document.getElementById('errorMessage');
+
+        // API基础配置
+        const API_BASE_URL = 'http://127.0.0.1:5000/api';
+        const API_ENDPOINTS = {
+            predict: '/fault/predict',
+            dispatch: '/dispatch/smart',
+            schedule: '/schedule/predict'
+        };
+
+        // 提交表单处理
+        submitBtn.addEventListener('click', async () => {
+            // 获取表单数据
+            const formData = {
+                imgUrl: document.getElementById('imgUrl').value.trim(),
+                orderId: document.getElementById('orderId').value.trim(),
+                lat: parseFloat(document.getElementById('lat').value),
+                lng: parseFloat(document.getElementById('lng').value),
+                algorithm: document.querySelector('input[name="algorithm"]:checked').value
+            };
+
+            // 基础验证
+            if (!formData.imgUrl) {
+                alert('图片URL不能为空');
+                return;
+            }
+
+            // 构建请求参数
+            let requestData = { img_url: formData.imgUrl };
+            let apiUrl = API_BASE_URL + API_ENDPOINTS[formData.algorithm];
+
+            // 根据不同算法添加参数
+            if (formData.algorithm === 'dispatch' || formData.algorithm === 'schedule') {
+                if (!formData.orderId) {
+                    alert('订单ID不能为空');
+                    return;
+                }
+                if (isNaN(formData.lat) || isNaN(formData.lng)) {
+                    alert('经纬度必须为有效数字');
+                    return;
+                }
+
+                requestData.order_id = formData.orderId;
+                requestData.lat = formData.lat;
+                requestData.lng = formData.lng;
+            }
+
+            // 显示加载状态
+            showState('loading');
+
+            try {
+                // 记录请求开始时间
+                const startTime = new Date().getTime();
+
+                // 发送API请求
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+
+                // 计算响应时间
+                const responseTimeMs = new Date().getTime() - startTime;
+
+                // 处理响应
+                const responseData = await response.json();
+
+                // 更新UI显示结果
+                updateResultDisplay(responseData, response.status, apiUrl, responseTimeMs);
+
+                // 显示结果区域
+                showState('result');
+
+                // 启用复制按钮
+                copyBtn.disabled = false;
+
+            } catch (error) {
+                // 显示错误状态
+                showState('error');
+                errorMessage.textContent = `接口调用失败: ${error.message}`;
+                copyBtn.disabled = true;
+            }
+        });
+
+        // 复制结果到剪贴板
+        copyBtn.addEventListener('click', () => {
+            const textToCopy = responseBody.textContent;
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                copyBtn.innerHTML = '<i class="fa fa-check mr-1"></i> 已复制';
+                setTimeout(() => {
+                    copyBtn.innerHTML = '<i class="fa fa-copy mr-1"></i> 复制结果';
+                }, 2000);
+            }).catch(err => {
+                alert('复制失败: ' + err);
+            });
+        });
+
+        // 显示不同状态
+        function showState(state) {
+            // 隐藏所有状态
+            [loadingState, resultArea, initialPrompt, errorState].forEach(el => {
+                el.classList.add('hidden');
+            });
+
+            // 显示指定状态
+            switch(state) {
+                case 'loading':
+                    loadingState.classList.remove('hidden');
+                    break;
+                case 'result':
+                    resultArea.classList.remove('hidden');
+                    break;
+                case 'error':
+                    errorState.classList.remove('hidden');
+                    break;
+                default: // initial
+                    initialPrompt.classList.remove('hidden');
+            }
+        }
+
+        // 更新结果显示
+        function updateResultDisplay(data, status, url, timeMs) {
+            // 更新请求URL
+            requestUrl.textContent = url;
+
+            // 更新响应状态
+            const statusClass = status >= 200 && status < 300
+                ? 'bg-success/10 text-success'
+                : 'bg-danger/10 text-danger';
+            const statusText = status >= 200 && status < 300 ? '成功' : '失败';
+            responseStatus.className = `inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusClass}`;
+            responseStatus.textContent = `${statusText} (${status})`;
+
+            // 更新响应时间
+            responseTime.textContent = `响应时间: ${timeMs}ms`;
+
+            // 更新响应体（格式化JSON）
+            responseBody.textContent = JSON.stringify(data, null, 2);
+        }
+    </script>
+</body>
+</html>

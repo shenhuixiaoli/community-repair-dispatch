@@ -1,0 +1,14 @@
+2026-03-23 17:00:46,926 - community_algorithm - INFO - oss_oper.py:34 - OSS客户端初始化成功
+2026-03-23 17:00:50,758 - community_algorithm - INFO - oss_oper.py:34 - OSS客户端初始化成功
+2026-03-23 17:51:39,113 - community_algorithm - INFO - oss_oper.py:34 - OSS客户端初始化成功
+2026-03-23 17:51:44,038 - community_algorithm - INFO - oss_oper.py:34 - OSS客户端初始化成功
+2026-03-23 19:34:23,960 - community_algorithm - INFO - oss_oper.py:34 - OSS客户端初始化成功
+2026-03-23 19:34:26,594 - community_algorithm - INFO - oss_oper.py:34 - OSS客户端初始化成功
+2026-03-23 19:35:12,810 - community_algorithm - INFO - oss_oper.py:34 - OSS客户端初始化成功
+2026-03-23 19:35:17,396 - community_algorithm - INFO - oss_oper.py:34 - OSS客户端初始化成功
+2026-03-23 19:41:14,634 - community_algorithm - INFO - oss_oper.py:34 - OSS客户端初始化成功
+2026-03-23 19:41:17,275 - community_algorithm - INFO - oss_oper.py:34 - OSS客户端初始化成功
+2026-03-23 19:41:44,919 - community_algorithm - ERROR - redis_oper.py:20 - Redis连接失败: Client sent AUTH, but no password is set
+2026-03-23 19:46:57,006 - community_algorithm - INFO - oss_oper.py:34 - OSS客户端初始化成功
+2026-03-23 19:46:59,564 - community_algorithm - INFO - oss_oper.py:34 - OSS客户端初始化成功
+2026-03-23 21:11:52,772 - community_algorithm - INFO - oss_oper.py:34 - OSS客户端初始化成功

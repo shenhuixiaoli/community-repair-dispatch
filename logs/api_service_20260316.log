@@ -1,0 +1,2 @@
+2026-03-16 14:18:54,273 - api_service - ERROR - app.py:20 - API异常: 'function' object has no attribute 'Timestamp'
+2026-03-16 14:20:18,485 - api_service - ERROR - app.py:20 - API异常: 'function' object has no attribute 'Timestamp'
