@@ -21,7 +21,7 @@ def smart_dispatch_api():
         # 获取请求参数
         params = request.json or {}
         # 验证参数
-        required = ["img_url", "order_id", "lat", "lng"]
+        required = ["fault_info", "order_id", "lat", "lng"]
         is_valid, msg = validate_request_params(params, required)
         if not is_valid:
             return jsonify(standardize_response(400, msg))
@@ -33,7 +33,7 @@ def smart_dispatch_api():
 
         # 执行派单
         result = smart_dispatch(
-            img_source=params["img_url"],
+            fault_info=params["fault_info"],
             order_id=params["order_id"],
             order_location=order_location,
             use_pso=use_pso,

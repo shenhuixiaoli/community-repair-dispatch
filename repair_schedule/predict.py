@@ -7,6 +7,7 @@ from typing import List, Dict
 from config.algorithm_config import SCHEDULE_MODEL_CONFIG
 from order_dispatch.dispatch import smart_dispatch
 from database.mysql_oper import get_historical_repair_data
+from common.model_utils import get_fault_info_from_label
 
 
 def load_schedule_model():
@@ -28,11 +29,12 @@ schedule_model = load_schedule_model()
 def extract_features(fault_info: dict, dispatch_result: dict, order_location: tuple) -> List[float]:
     """提取排期预测特征"""
     features = []
+    fault_detail=get_fault_info_from_label(fault_info["fault_label"])
     for col in SCHEDULE_MODEL_CONFIG["feature_cols"]:
         if col == "fault_type":
-            features.append(fault_info["fault_type"])
+            features.append(fault_detail["fault_type"])
         elif col == "severity":
-            features.append(fault_info["severity"])
+            features.append(fault_detail["severity"])
         elif col == "worker_id":
             # 将worker_id转换为数值（可预先建立映射表）
             worker_id = dispatch_result.get("worker_id", "W000")
@@ -44,29 +46,29 @@ def extract_features(fault_info: dict, dispatch_result: dict, order_location: tu
     return features
 
 
-def predict_schedule(img_source, order_id, order_location):
+def predict_schedule(dispatch_result, order_id, order_location):
     """
     维修排期预测核心函数
-    :param img_source: 故障图片路径/OSS URL
+    :dispatch_result :派单结果
     :param order_id: 工单ID
     :param order_location: 工单位置（纬度，经度）
     :return: 结构化排期结果
     """
     try:
-        # 1. 调用派单算法获取故障+派单信息
-        dispatch_result = smart_dispatch(img_source, order_id, order_location)
-        if dispatch_result["code"] != 200:
+        # 1. 校验派单结果是否正确
+        dispatch_info = dispatch_result["dispatch_info"]
+        if not dispatch_result["is_valid"]:
             return {
                 "code": 400,
                 "msg": "派单失败，无法预测排期",
                 "data": dispatch_result["data"]
             }
 
-        fault_info = dispatch_result["data"]["fault_info"]
-        dispatch_detail = dispatch_result["data"]["dispatch_result"]
+        fault_info = dispatch_result["fault_info"]
+        dispatch_info = dispatch_result["dispatch_info"]
 
         # 2. 提取特征
-        features = extract_features(fault_info, dispatch_detail, order_location)
+        features = extract_features(fault_info, dispatch_info, order_location)
 
         # 3. 模型预测维修时长（TODO: 替换为实际推理逻辑）
         repair_duration = 0.0
@@ -104,7 +106,7 @@ def predict_schedule(img_source, order_id, order_location):
             "msg": "排期预测成功",
             "data": {
                 "fault_info": fault_info,
-                "dispatch_result": dispatch_detail,
+                "dispatch_result": dispatch_info,
                 "schedule_result": schedule_result
             }
         }
@@ -113,5 +115,5 @@ def predict_schedule(img_source, order_id, order_location):
         return {
             "code": 500,
             "msg": f"排期预测失败: {str(e)}",
-            "data": {"img_source": img_source, "order_id": order_id}
+            "data": {"dispatch_result": dispatch_result, "order_id": order_id}
         }

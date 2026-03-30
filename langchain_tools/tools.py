@@ -55,10 +55,10 @@ fault_tool = Tool(
 )
 
 # ************************** 2. 智能派单算法工具 **************************
-def smart_dispatch_tool(img_url: str, order_id: str, lat: float, lng: float, use_pso: bool = False, batch_orders=None):
+def smart_dispatch_tool(fault_info: str, order_id: str, lat: float, lng: float, use_pso: bool = False, batch_orders=None):
     """
     智能派单算法工具：多目标优化派单，返回最优维修人员、距离、耗时等
-    :param img_url: 故障图片URL
+    :param fault_info: 故障识别结果
     :param order_id: 工单ID
     :param lat: 纬度
     :param lng: 经度
@@ -69,7 +69,7 @@ def smart_dispatch_tool(img_url: str, order_id: str, lat: float, lng: float, use
     try:
         headers = {"Content-Type": "application/json"}
         data = {
-            "img_url": img_url,
+            "fault_info": fault_info,
             "order_id": order_id,
             "lat": lat,
             "lng": lng,
@@ -92,7 +92,7 @@ dispatch_tool = Tool(
 工具名称：smart_dispatch
 工具作用：基于多目标优化算法，为维修工单智能分配最优维修人员
 入参要求：
-  - img_url：字符串，必选，故障图片URL
+  - fault_info：json字符串，必选，故障识别结果
   - order_id：字符串，必选，工单唯一标识
   - lat：浮点数，必选，工单纬度
   - lng：浮点数，必选，工单经度
@@ -105,11 +105,11 @@ dispatch_tool = Tool(
 )
 
 # ************************** 3. 排期预测算法工具（你原有代码已完善） **************************
-def schedule_predict_tool(order_id: str, img_source: str, lat: float, lng: float):
+def schedule_predict_tool(order_id: str, dispatch_result: str, lat: float, lng: float):
     """
     排期预测算法工具的核心执行逻辑：调用排期算法API，返回结构化结果
     :param order_id: 工单ID
-    :param img_source: 故障图片路径/OSS URL
+    :param dispatch_result: 派单结果(也包含故障识别结果）
     :param lat: 工单位置纬度
     :param lng: 工单位置经度
     :return: 算法API返回的结构化结果
@@ -117,7 +117,7 @@ def schedule_predict_tool(order_id: str, img_source: str, lat: float, lng: float
     try:
         headers = {"Content-Type": "application/json"}
         data = {
-            "img_url": img_source,
+            "dispatch_result": dispatch_result,
             "order_id": order_id,
             "lat": lat,
             "lng": lng
@@ -139,7 +139,7 @@ schedule_tool = Tool(
 工具作用：调用维修排期预测算法（随机森林模型），为已派单的工单预测维修时长、缓冲时间和截止时间
 入参要求：
   - order_id：字符串，必选，工单唯一标识（如SCHEDULE20260323001）
-  - img_source：字符串，必选，故障图片的OSS URL/本地路径
+  - dispatch_result：json字符串，必选，派单结果和故障结果
   - lat：浮点数，必选，工单位置的纬度（如31.2305）
   - lng：浮点数，必选，工单位置的经度（如121.4738）
 出参格式：{"code":200/400/500,"msg":"执行结果描述","data":{"fault_info":{}, "dispatch_result":{}, "schedule_result":{}}}

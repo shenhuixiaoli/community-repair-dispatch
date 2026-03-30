@@ -4,8 +4,9 @@ from fault_recognize.predict import predict_fault
 from order_dispatch.greedy import WeightedGreedyDispatch, WorkOrder, RepairWorker
 from order_dispatch.pso import PSODispatch
 from database.redis_oper import get_worker_real_time_status
+from config.algorithm_config import DISPATCH_CONFIG
 
-def smart_dispatch(img_source, order_id, order_location, use_pso=False, batch_orders=None):
+def smart_dispatch(fault_info, order_id, order_location, use_pso=False, batch_orders=None):
     """
     智能派单统一调度函数
     :param img_source: 故障图片路径/OSS URL
@@ -16,8 +17,7 @@ def smart_dispatch(img_source, order_id, order_location, use_pso=False, batch_or
     :return: 结构化派单结果
     """
     try:
-        # 1. 获取故障信息
-        fault_info = predict_fault(img_source)
+        # 1. 判断故障信息是否合法
         if not fault_info["is_valid"]:
             return {
                 "code": 400,
@@ -80,7 +80,8 @@ def smart_dispatch(img_source, order_id, order_location, use_pso=False, batch_or
                 "fault_info": fault_info,
                 "dispatch_result": results,
                 "order_id": order_id,
-                "order_location": order_location
+                "order_location": order_location,
+                "is_valid": results["comprehensive_score"] >= DISPATCH_CONFIG["comprehensive_score_threshold"],
             }
         }
     except Exception as e:
@@ -88,5 +89,5 @@ def smart_dispatch(img_source, order_id, order_location, use_pso=False, batch_or
         return {
             "code": 500,
             "msg": f"派单失败: {str(e)}",
-            "data": {"img_source": img_source, "order_id": order_id}
+            "data": {"fault_info": fault_info, "order_id": order_id}
         }

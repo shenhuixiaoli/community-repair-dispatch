@@ -21,7 +21,7 @@ def schedule_predict():
         # 获取请求参数
         params = request.json or {}
         # 验证参数
-        required = ["img_url", "order_id", "lat", "lng"]
+        required = ["dispatch_result", "order_id", "lat", "lng"]
         is_valid, msg = validate_request_params(params, required)
         if not is_valid:
             return jsonify(standardize_response(400, msg))
@@ -31,7 +31,7 @@ def schedule_predict():
 
         # 执行排期预测
         result = predict_schedule(
-            img_source=params["img_url"],
+            dispatch_result=params["dispatch_result"],
             order_id=params["order_id"],
             order_location=order_location
         )
